@@ -28,7 +28,10 @@ func main() {
 	opencode := client.NewWithOptions(cfg.OpenCodeURL, cfg.Username, cfg.Password, httpClient, client.Options{APIVersion: cfg.APIVersion, Directory: cfg.Directory})
 	mcpServer, mcpHandler := mcpbridge.New(opencode)
 	legacySSEHandler := mcpbridge.NewLegacySSEHandler(mcpServer)
-	e := server.New(handlers.New(opencode), mcpHandler, legacySSEHandler)
+	e := server.NewWithOptions(handlers.New(opencode), server.Options{AuthToken: cfg.BridgeAPIKey}, mcpHandler, legacySSEHandler)
+	if cfg.BridgeAPIKey == "" {
+		log.Print("bridge authentication is disabled; set OPENCODE_MCP_BRIDGE_API_KEY to enable Bearer authentication")
+	}
 
 	go func() {
 		log.Printf("opencode MCP bridge listening on %s (OpenCode: %s)", cfg.ListenAddress, cfg.OpenCodeURL)

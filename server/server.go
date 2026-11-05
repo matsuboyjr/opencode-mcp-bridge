@@ -1,3 +1,4 @@
+// Modified in this fork to support optional inbound Bearer authentication.
 package server
 
 import (
@@ -8,7 +9,15 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 )
 
+type Options struct {
+	AuthToken string
+}
+
 func New(h *handlers.Handler, mcpHandler ...http.Handler) *echo.Echo {
+	return NewWithOptions(h, Options{}, mcpHandler...)
+}
+
+func NewWithOptions(h *handlers.Handler, options Options, mcpHandler ...http.Handler) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(middleware.RequestID())
@@ -16,9 +25,12 @@ func New(h *handlers.Handler, mcpHandler ...http.Handler) *echo.Echo {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"*"},
-		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodOptions},
-		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodDelete, http.MethodOptions},
+		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization, "MCP-Protocol-Version", "Mcp-Session-Id", "Last-Event-ID"},
 	}))
+	if options.AuthToken != "" {
+		e.Use(bearerAuthentication(options.AuthToken))
+	}
 
 	e.GET("/healthz", func(c echo.Context) error { return c.JSON(http.StatusOK, map[string]string{"status": "ok"}) })
 	if len(mcpHandler) > 0 && mcpHandler[0] != nil {

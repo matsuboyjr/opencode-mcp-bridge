@@ -21,6 +21,7 @@ The bridge listens on `:8080` by default. Available environment variables:
 
 - `BRIDGE_LISTEN_ADDRESS`: Listen address, default `:8080`
 - `BRIDGE_REQUEST_TIMEOUT`: Upstream HTTP timeout, default `60m`
+- `OPENCODE_MCP_BRIDGE_API_KEY`: Optional incoming Bridge API key. When nonempty, REST, Streamable HTTP (`/` and `/mcp`), and legacy SSE (`/mcp/sse`, including its POST requests) require `Authorization: Bearer <key>`. Unset or empty keeps authentication disabled for compatibility and emits a startup warning. `GET /healthz` stays public for liveness checks. Whitespace or malformed Bearer-token characters in a configured key cause a startup error.
 - `OPENCODE_BASE_URL`: OpenCode server URL, default `http://127.0.0.1:4096`
 - `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD`: HTTP Basic Auth credentials
 - `OPENCODE_API_VERSION`: `auto` (default), `v1`, or `v2`. Detection checks JSON structure and version, not just HTTP status. Only missing/non-JSON V1 health routes permit trying V2 info. Authentication failures and network/server errors stop detection. Successful detection is cached for the bridge process; restart it after replacing the upstream API version.
@@ -66,6 +67,45 @@ The Streamable HTTP endpoint is `http://localhost:8080/mcp` (the root path `/` i
 ```
 
 Legacy clients requiring the MCP 2024-11-05 HTTP+SSE transport can use `http://localhost:8080/mcp/sse`. Modern clients should prefer Streamable HTTP via `/mcp`.
+
+### Bridge API key authentication
+
+Set the key in the Bridge process environment, then restart the Bridge:
+
+```sh
+export OPENCODE_MCP_BRIDGE_API_KEY='replace-with-a-long-random-key'
+go run ./cmd
+```
+
+On PowerShell, use `$env:OPENCODE_MCP_BRIDGE_API_KEY = 'replace-with-a-long-random-key'`. Use a cryptographically random key, for example 32 random bytes encoded as hex, and keep it out of version control. The repository contains no production key.
+
+Configure the MCP client's custom HTTP headers (the exact configuration UI depends on the client):
+
+```json
+{
+  "mcpServers": {
+    "opencode": {
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-bridge-api-key>"
+      }
+    }
+  }
+}
+```
+
+For REST, supply the same header:
+
+```sh
+curl -H "Authorization: Bearer $OPENCODE_MCP_BRIDGE_API_KEY" \
+  http://127.0.0.1:8080/opencode/setup
+```
+
+Missing, malformed or incorrect credentials receive HTTP 401 with a Bearer challenge. Query parameters are not accepted as credentials. Legacy SSE clients must send the header on both the event stream and message POST requests. This is a single shared key, without OAuth discovery, per-user permissions or key issuance endpoints. Rotation requires changing the environment and restarting the Bridge; existing long-lived streams should be reconnected.
+
+The Bridge key is independent of `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD`, which authenticate the Bridge to OpenCode. It is not forwarded upstream. When accessing the Bridge across an untrusted network, use HTTPS via a reverse proxy. Without a key, restrict access using loopback binding (`BRIDGE_LISTEN_ADDRESS=127.0.0.1:8080`) or a private network. CORS preflight remains available, but the actual operation requires the key when configured.
+
+The unused repository-local `logReader` OpenCode MCP debug configuration has been removed.
 
 The bridge exposes nine tools:
 
@@ -187,9 +227,12 @@ environment:
   OPENCODE_SERVER_USERNAME: opencode
   OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD}
   BRIDGE_REQUEST_TIMEOUT: 60m
+  OPENCODE_MCP_BRIDGE_API_KEY: ${OPENCODE_MCP_BRIDGE_API_KEY}
 ```
 
 For the V2.1.1 OpenCode service, configure `OPENCODE_PASSWORD` (the legacy `OPENCODE_SERVER_PASSWORD` alias is also accepted), use `serve --hostname 0.0.0.0 --port 4096`, and provide the matching server-side project directory. V2 provider configuration uses `providers`, `package` and `settings`; migrate OpenCode's configuration separately using its official migration guide. Keep the test Compose and its data volumes separate from the existing deployment. No production Compose changes are applied by this repository's test runner.
+
+Supply a nonempty `OPENCODE_MCP_BRIDGE_API_KEY` in the deployment environment to enable Bridge authentication. Leaving it unset or empty disables authentication. The isolated test Compose uses a separate, deliberately non-secret Bridge key and checks both accepted and rejected credentials before running the MCP tool contracts.
 
 ### Limitations
 

@@ -17,6 +17,7 @@ type Config struct {
 	APIVersion     string
 	Directory      string
 	RequestTimeout time.Duration
+	BridgeAPIKey   string
 }
 
 func Load() (Config, error) {
@@ -28,6 +29,10 @@ func Load() (Config, error) {
 		APIVersion:     envOrDefault("OPENCODE_API_VERSION", "auto"),
 		Directory:      os.Getenv("OPENCODE_DIRECTORY"),
 		RequestTimeout: 60 * time.Minute,
+		BridgeAPIKey:   os.Getenv("OPENCODE_MCP_BRIDGE_API_KEY"),
+	}
+	if cfg.BridgeAPIKey != "" && !validBearerToken(cfg.BridgeAPIKey) {
+		return Config{}, fmt.Errorf("OPENCODE_MCP_BRIDGE_API_KEY must contain only Bearer token characters without whitespace")
 	}
 	if cfg.APIVersion != "auto" && cfg.APIVersion != "v1" && cfg.APIVersion != "v2" {
 		return Config{}, fmt.Errorf("OPENCODE_API_VERSION must be auto, v1, or v2")
@@ -51,6 +56,23 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("OPENCODE_BASE_URL must be an absolute HTTP(S) URL")
 	}
 	return cfg, nil
+}
+
+func validBearerToken(token string) bool {
+	if token == "" {
+		return false
+	}
+	padding := false
+	for _, r := range token {
+		if r == '=' {
+			padding = true
+			continue
+		}
+		if padding || !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-._~+/", r)) {
+			return false
+		}
+	}
+	return token[0] != '='
 }
 
 func serverAbsolutePath(path string) bool {

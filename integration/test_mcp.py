@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 
 PASSWORD = "isolated-test-password"
+BRIDGE_API_KEY = "isolated-bridge-api-key"
 EXPECTED_TOOLS = {"opencode_" + name for name in (
     "setup", "ask", "reply", "run", "check", "conversation",
     "sessions_overview", "mcp_servers", "provider_test")}
@@ -34,8 +35,9 @@ def upstream(version, path, payload=None, method=None, password=PASSWORD):
 
 
 class MCP:
-    def __init__(self, url):
+    def __init__(self, url, api_key=BRIDGE_API_KEY):
         self.url, self.counter, self.session = url, 0, None
+        self.api_key = api_key
         result = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                                          "clientInfo": {"name": "bridge-isolated-test", "version": "1"}})
         self.protocol = result["protocolVersion"]
@@ -49,6 +51,8 @@ class MCP:
         if not notification:
             body["id"] = self.counter
         headers = {}
+        if self.api_key:
+            headers["Authorization"] = "Bearer " + self.api_key
         if hasattr(self, "protocol"):
             headers["MCP-Protocol-Version"] = self.protocol
         if self.session:
@@ -111,6 +115,16 @@ def pending_case(mcp, marker, expected):
 
 def contracts(version, exact_version):
     mcp = ready(f"http://bridge-{version}:8080/mcp")
+    # Bridge credentials are separate from OpenCode's upstream Basic auth.
+    for path, method, payload in (("/", "POST", {}), ("/mcp", "POST", {}), ("/mcp/sse", "GET", None), ("/opencode/setup", "GET", None), ("/opencode/ask", "POST", {"prompt": "MUST_NOT_BE_SENT"})):
+        for authorization in (None, "Bearer incorrect"):
+            headers = {} if authorization is None else {"Authorization": authorization}
+            try:
+                request(f"http://bridge-{version}:8080" + path, payload, method, headers)
+                raise AssertionError("Bridge accepted missing or incorrect credentials")
+            except urllib.error.HTTPError as error:
+                assert error.code == 401 and error.headers.get("WWW-Authenticate"), error
+    assert request(f"http://bridge-{version}:8080/healthz")[0]["status"] == "ok"
     setup = mcp.call("setup")
     assert setup["healthy"] and setup["health"]["version"] == exact_version, setup
     # HTTP authentication is checked against each actual OpenCode server.
@@ -195,17 +209,18 @@ def contracts(version, exact_version):
 
 
 @contextlib.contextmanager
-def local_bridge(version, password=PASSWORD, base=None):
+def local_bridge(version, password=PASSWORD, base=None, api_key=BRIDGE_API_KEY):
     env = {"PATH": os.environ["PATH"], "BRIDGE_LISTEN_ADDRESS": "127.0.0.1:8099",
            "OPENCODE_BASE_URL": base or f"http://opencode-{version}:4096", "OPENCODE_API_VERSION": "auto",
            "OPENCODE_DIRECTORY": "/work/a", "OPENCODE_SERVER_USERNAME": "opencode",
-           "OPENCODE_SERVER_PASSWORD": password, "BRIDGE_REQUEST_TIMEOUT": "2s"}
+           "OPENCODE_SERVER_PASSWORD": password, "BRIDGE_REQUEST_TIMEOUT": "2s",
+           "OPENCODE_MCP_BRIDGE_API_KEY": api_key or ""}
     process = subprocess.Popen(["/bridge"], env=env)
     try:
         deadline = time.monotonic() + 10
         while True:
             try:
-                yield_value = MCP("http://127.0.0.1:8099/mcp")
+                yield_value = MCP("http://127.0.0.1:8099/mcp", api_key=api_key)
                 break
             except OSError:
                 if time.monotonic() > deadline:
@@ -228,4 +243,7 @@ if __name__ == "__main__":
             assert "401" in client.call("setup", error=True)
         with local_bridge(version, base="http://127.0.0.1:1") as client:
             assert "cannot connect" in client.call("setup", error=True)
+    with local_bridge("v2", api_key=None) as client:
+        assert client.call("setup")["healthy"]
+        assert request("http://127.0.0.1:8099/opencode/setup")[0]["healthy"]
     print("PASS all isolated contracts (mock LLM only; not real-model validation)", flush=True)

@@ -10,6 +10,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("OPENCODE_BASE_URL", "")
 	t.Setenv("BRIDGE_LISTEN_ADDRESS", "")
 	t.Setenv("BRIDGE_REQUEST_TIMEOUT", "")
+	t.Setenv("OPENCODE_MCP_BRIDGE_API_KEY", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -17,6 +18,22 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.OpenCodeURL != "http://127.0.0.1:4096" || cfg.ListenAddress != ":8080" || cfg.RequestTimeout != 60*time.Minute {
 		t.Fatalf("unexpected defaults: %#v", cfg)
+	}
+}
+
+func TestLoadBridgeAPIKey(t *testing.T) {
+	for _, token := range []string{"", "test-api-key", "abc_DEF-123.~+/=="} {
+		t.Setenv("OPENCODE_MCP_BRIDGE_API_KEY", token)
+		cfg, err := Load()
+		if err != nil || cfg.BridgeAPIKey != token {
+			t.Fatalf("API key configuration failed: %v", err)
+		}
+	}
+	for _, token := range []string{" ", " key", "key ", "key\nvalue", "key\tvalue", "key:value", "=", "abc=def"} {
+		t.Setenv("OPENCODE_MCP_BRIDGE_API_KEY", token)
+		if _, err := Load(); err == nil {
+			t.Fatal("accepted invalid API key configuration")
+		}
 	}
 }
 
