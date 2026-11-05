@@ -1,0 +1,16 @@
+{
+  "model": "mock/fixed",
+  "small_model": "mock/fixed",
+  "autoupdate": false,
+  "share": "disabled",
+  "provider": {
+    "mock": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Isolated mock",
+      "options": {"baseURL": "http://llm:8000/v1", "apiKey": "test-only"},
+      "models": {"fixed": {"name": "Fixed", "limit": {"context": 32000, "output": 4096}}}
+    }
+  },
+  "permission": {"*": "allow", "bash": {"*": "allow", "printf bridge-approval*": "ask"}},
+  "mcp": {}
+}

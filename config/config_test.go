@@ -1,3 +1,4 @@
+// Modified to cover version and authentication configuration.
 package config
 
 import (
@@ -53,4 +54,18 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadVersionAndDirectory(t *testing.T) {
+	t.Setenv("OPENCODE_API_VERSION", "v2")
+	t.Setenv("OPENCODE_DIRECTORY", "/work/a")
+	t.Setenv("OPENCODE_SERVER_USERNAME", "")
+	t.Setenv("OPENCODE_SERVER_PASSWORD", "test-password")
+	cfg,err:=Load()
+	if err!=nil||cfg.APIVersion!="v2"||cfg.Directory!="/work/a"||cfg.Username!="opencode" {t.Fatalf("%#v %v",cfg,err)}
+	t.Setenv("OPENCODE_API_VERSION", "guess")
+	if _,err:=Load();err==nil {t.Fatal("accepted invalid API version")}
+	t.Setenv("OPENCODE_API_VERSION", "auto")
+	t.Setenv("OPENCODE_DIRECTORY", "relative/project")
+	if _,err:=Load();err==nil {t.Fatal("accepted relative server directory")}
 }

@@ -1,0 +1,21 @@
+# Added for isolated bridge test builds; exclude host state and credentials.
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**
+!client/
+!client/**
+!config/
+!config/**
+!handlers/
+!handlers/**
+!mcpbridge/
+!mcpbridge/**
+!server/
+!server/**
+!types/
+!types/**
+!integration/
+!integration/**
+!LICENSE

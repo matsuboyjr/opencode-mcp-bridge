@@ -1,0 +1,83 @@
+# Added for isolated V1/V2 contract tests. No host ports or credentials.
+services:
+  llm:
+    image: python:3.13.7-alpine3.22
+    command: ["python", "/tests/mock_llm.py"]
+    volumes: ["./mock_llm.py:/tests/mock_llm.py:ro"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  opencode-v1:
+    build:
+      context: ..
+      dockerfile: integration/Dockerfile.opencode
+      args: {OPENCODE_IMAGE: "ghcr.io/anomalyco/opencode:1.2.27"}
+    environment:
+      HOME: /test-home
+      TEST_API_VERSION: v1
+      OPENCODE_SERVER_USERNAME: opencode
+      OPENCODE_SERVER_PASSWORD: isolated-test-password
+      OPENCODE_DISABLE_MODELS_FETCH: "true"
+      OPENCODE_DISABLE_DEFAULT_PLUGINS: "true"
+    volumes: ["v1-home:/test-home", "v1-work:/work"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [llm]
+
+  opencode-v2:
+    build:
+      context: ..
+      dockerfile: integration/Dockerfile.opencode
+      args: {OPENCODE_IMAGE: "ghcr.io/anomalyco/opencode:2.1.1"}
+    environment:
+      HOME: /test-home
+      TEST_API_VERSION: v2
+      OPENCODE_PASSWORD: isolated-test-password
+      OPENCODE_DISABLE_MODELS_FETCH: "true"
+    volumes: ["v2-home:/test-home", "v2-work:/work"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [llm]
+
+  bridge-v1:
+    build: {context: .., dockerfile: integration/Dockerfile, target: bridge}
+    environment:
+      OPENCODE_BASE_URL: http://opencode-v1:4096
+      OPENCODE_API_VERSION: auto
+      OPENCODE_DIRECTORY: /work/a
+      OPENCODE_SERVER_USERNAME: opencode
+      OPENCODE_SERVER_PASSWORD: isolated-test-password
+      BRIDGE_REQUEST_TIMEOUT: 30s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  bridge-v2:
+    build: {context: .., dockerfile: integration/Dockerfile, target: bridge}
+    environment:
+      OPENCODE_BASE_URL: http://opencode-v2:4096
+      OPENCODE_API_VERSION: auto
+      OPENCODE_DIRECTORY: /work/a
+      OPENCODE_SERVER_USERNAME: opencode
+      OPENCODE_SERVER_PASSWORD: isolated-test-password
+      BRIDGE_REQUEST_TIMEOUT: 30s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  test:
+    build: {context: .., dockerfile: integration/Dockerfile, target: runner}
+    environment: {PYTHONDONTWRITEBYTECODE: "1"}
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [opencode-v1, opencode-v2, bridge-v1, bridge-v2]
+
+volumes:
+  v1-home:
+  v1-work:
+  v2-home:
+  v2-work:

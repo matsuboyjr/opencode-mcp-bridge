@@ -1,3 +1,4 @@
+// Modified to configure OpenCode API selection and workspace isolation.
 package main
 
 import (
@@ -24,7 +25,7 @@ func main() {
 	}
 
 	httpClient := &http.Client{Timeout: cfg.RequestTimeout}
-	opencode := client.New(cfg.OpenCodeURL, cfg.Username, cfg.Password, httpClient)
+	opencode := client.NewWithOptions(cfg.OpenCodeURL, cfg.Username, cfg.Password, httpClient, client.Options{APIVersion: cfg.APIVersion, Directory: cfg.Directory})
 	mcpServer, mcpHandler := mcpbridge.New(opencode)
 	legacySSEHandler := mcpbridge.NewLegacySSEHandler(mcpServer)
 	e := server.New(handlers.New(opencode), mcpHandler, legacySSEHandler)

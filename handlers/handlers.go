@@ -1,3 +1,4 @@
+// Modified to preserve timeout/cancellation details for versioned OpenCode calls.
 package handlers
 
 import (
@@ -43,8 +44,7 @@ func (h *Handler) Setup(c echo.Context) error {
 	}
 	project, err := h.client.Project(c.Request().Context())
 	if err != nil {
-		var httpErr *client.HTTPError
-		if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
+		if !client.IsMissingProject(err) {
 			return respondError(c, err)
 		}
 	}
@@ -101,7 +101,7 @@ func (h *Handler) Run(c echo.Context) error {
 	result, err := h.client.Run(ctx, req.AskRequest)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return c.JSON(http.StatusGatewayTimeout, bridgetypes.ErrorResponse{Error: "OpenCode task timed out"})
+			return c.JSON(http.StatusGatewayTimeout, bridgetypes.ErrorResponse{Error: err.Error()})
 		}
 		return respondError(c, err)
 	}
@@ -118,11 +118,11 @@ func (h *Handler) Check(c echo.Context) error {
 	if err != nil {
 		return respondError(c, err)
 	}
-	statuses, err := h.client.SessionStatuses(ctx)
+	status, err := client.ReadSessionStatus(ctx, h.client, id)
 	if err != nil {
 		return respondError(c, err)
 	}
-	response := bridgetypes.CheckResponse{Session: raw, Status: sessionStatus(statuses, id)}
+	response := bridgetypes.CheckResponse{Session: raw, Status: status}
 	if c.QueryParam("detailed") == "true" {
 		response.Todos, err = h.client.Todos(ctx, id)
 		if err != nil {
@@ -245,6 +245,8 @@ func rawJSON(c echo.Context, raw json.RawMessage) error {
 }
 
 func respondError(c echo.Context, err error) error {
+	if errors.Is(err, context.DeadlineExceeded) { return c.JSON(http.StatusGatewayTimeout, bridgetypes.ErrorResponse{Error:err.Error()}) }
+	if errors.Is(err, context.Canceled) { return c.JSON(http.StatusRequestTimeout, bridgetypes.ErrorResponse{Error:err.Error()}) }
 	if errors.Is(err, client.ErrUnavailable) || errors.Is(err, context.DeadlineExceeded) {
 		return c.JSON(http.StatusServiceUnavailable, bridgetypes.ErrorResponse{Error: client.ErrUnavailable.Error(), Hint: client.StartHint})
 	}

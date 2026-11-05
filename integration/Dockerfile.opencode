@@ -1,0 +1,9 @@
+# Added: fixed upstream versions are supplied by compose.yaml.
+ARG OPENCODE_IMAGE
+FROM ${OPENCODE_IMAGE}
+USER root
+RUN apk add --no-cache git bash
+COPY integration/start-opencode.sh /test/start-opencode.sh
+COPY integration/config-v1.json /test/config-v1.json
+COPY integration/config-v2.json /test/config-v2.json
+ENTRYPOINT ["sh", "/test/start-opencode.sh"]

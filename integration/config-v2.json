@@ -1,0 +1,19 @@
+{
+  "model": "mock/fixed",
+  "update": "disable",
+  "share": "disabled",
+  "snapshots": false,
+  "providers": {
+    "mock": {
+      "name": "Isolated mock",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {"baseURL": "http://llm:8000/v1", "apiKey": "test-only"},
+      "models": {"fixed": {"name": "Fixed", "capabilities": {"tools": true}, "limit": {"context": 32000, "output": 4096}}}
+    }
+  },
+  "permissions": [
+    {"action": "*", "resource": "*", "effect": "allow"},
+    {"action": "shell", "resource": "printf bridge-approval*", "effect": "ask"}
+  ],
+  "mcp": {}
+}

@@ -1,3 +1,4 @@
+// Modified for OpenCode V2 session semantics and actionable wait errors.
 package mcpbridge
 
 import (
@@ -70,7 +71,7 @@ type providerTestArgs struct {
 
 func New(c OpenCodeClient) (*mcp.Server, http.Handler) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "opencode-mcp-bridge", Version: "0.1.0"}, &mcp.ServerOptions{
-		Instructions: "Use these tools to communicate with an already running OpenCode server. Start OpenCode manually with `opencode serve` if setup reports it unavailable. Always pass the 'ses_...' prefix for session IDs.",
+		Instructions: "Use these tools with an existing OpenCode server. The bridge is scoped to OPENCODE_DIRECTORY (a server-side path). On V2, model and agent selection changes subsequent turns of the entire session. Resolve approval_required and question_required in OpenCode; these are not completed tasks. Always pass the 'ses_...' prefix for session IDs.",
 	})
 
 	mcp.AddTool(server, &mcp.Tool{Name: "opencode_setup", Description: "Verify OpenCode is running and return the active project's workspace details."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
@@ -80,8 +81,7 @@ func New(c OpenCodeClient) (*mcp.Server, http.Handler) {
 		}
 		project, err := c.Project(ctx)
 		if err != nil {
-			var httpErr *client.HTTPError
-			if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
+			if !client.IsMissingProject(err) {
 				return toolError(err), nil, nil
 			}
 			project = nil
@@ -142,11 +142,11 @@ func New(c OpenCodeClient) (*mcp.Server, http.Handler) {
 		if err != nil {
 			return toolError(err), nil, nil
 		}
-		statuses, err := c.SessionStatuses(ctx)
+		status, err := client.ReadSessionStatus(ctx, c, args.SessionID)
 		if err != nil {
 			return toolError(err), nil, nil
 		}
-		result := map[string]any{"session": session, "status": selectStatus(statuses, args.SessionID)}
+		result := map[string]any{"session": session, "status": status}
 		if args.Detailed {
 			if result["todos"], err = c.Todos(ctx, args.SessionID); err != nil {
 				return toolError(err), nil, nil
@@ -172,7 +172,7 @@ func New(c OpenCodeClient) (*mcp.Server, http.Handler) {
 		return rawResult(result), nil, nil
 	})
 
-	mcp.AddTool(server, &mcp.Tool{Name: "opencode_sessions_overview", Description: "List OpenCode sessions and their summaries."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
+	mcp.AddTool(server, &mcp.Tool{Name: "opencode_sessions_overview", Description: "List OpenCode sessions and summaries in the bridge's base directory and all descendant directories, including nested projects."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		result, err := c.Sessions(ctx)
 		if err != nil {
 			return toolError(err), nil, nil
@@ -257,7 +257,7 @@ func validateSessionID(id string) *mcp.CallToolResult {
 
 func toolError(err error) *mcp.CallToolResult {
 	message := err.Error()
-	if errors.Is(err, client.ErrUnavailable) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, client.ErrUnavailable) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 		message = fmt.Sprintf("%s. %s", client.ErrUnavailable, client.StartHint)
 	}
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: message}}}
